@@ -7,12 +7,12 @@ package iterator
 //
 // ```golang
 //
-//		for iter.Next() {
-//			doSomething(iter.Get())
-//	 }
-//	 if err := iter.Err(); err != nil {
-//			panic(err)
-//		}
+//	for iter.Next() {
+//		doSomething(iter.Get())
+//	}
+//	if err := iter.Err(); err != nil {
+//		panic(err)
+//	}
 //
 // ````
 type Iterator[E any] interface {
