@@ -48,11 +48,11 @@ func (f Filter[E]) Next() bool {
 // to each value. This can result in a change in the iterating type.
 type Map[BEFORE any, AFTER any] struct {
 	Iterator[BEFORE]
-	Convert func(BEFORE) AFTER
+	Update func(BEFORE) AFTER
 }
 
-func (m Map[BEFORE, AFTER]) GET() AFTER {
-	return m.Convert(m.Iterator.Get())
+func (m Map[BEFORE, AFTER]) Get() AFTER {
+	return m.Update(m.Iterator.Get())
 }
 
 // Slice is a wrapper of a slice that implements the Iterator interface.
@@ -102,12 +102,12 @@ func GetN[E any](iter Iterator[E], n int) (result []E, err error) {
 }
 
 type Combine[BEFORE any, AFTER any] struct {
-	Iters []Iterator[BEFORE]
-	Join  func(...BEFORE) AFTER
+	Iterators []Iterator[BEFORE]
+	Join      func(...BEFORE) AFTER
 }
 
 func (c Combine[BEFORE, AFTER]) Next() bool {
-	for _, iter := range c.Iters {
+	for _, iter := range c.Iterators {
 		if !iter.Next() {
 			return false
 		}
@@ -117,17 +117,120 @@ func (c Combine[BEFORE, AFTER]) Next() bool {
 
 func (c Combine[BEFORE, AFTER]) Get() AFTER {
 	var gets []BEFORE
-	for _, iter := range c.Iters {
+	for _, iter := range c.Iterators {
 		gets = append(gets, iter.Get())
 	}
 	return c.Join(gets...)
 }
 
 func (c Combine[BEFORE, AFTER]) Err() error {
-	for _, iter := range c.Iters {
+	for _, iter := range c.Iterators {
 		if err := iter.Err(); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// Generate is the function used by Generator to create the next value. The parameter
+// is the previous value returned by the iterator.
+// The returns should have the following valid structures
+// - return true, some_value, nil. continue iterating, some_value will be the next Get Value
+// - return false, zero, nil. Iteration complete
+// - return false, zero, some_error. An error occurred during Generate, Iteration Error.
+type Generate[E any] func(E) (bool, E, error)
+
+type Generator[E any] struct {
+	Generate Generate[E]
+
+	val E
+	err error
+}
+
+func (g *Generator[E]) Next() bool {
+	if g.err != nil {
+		return false
+	}
+	var cont bool
+	cont, g.val, g.err = g.Generate(g.val)
+	if g.err != nil {
+		return false
+	}
+	return cont
+}
+
+func (g *Generator[E]) Get() E {
+	return g.val
+}
+
+func (g *Generator[E]) Err() error {
+	return g.err
+}
+
+// Clonable types are able to return a copy of themselves. Usually this copy
+// has newly allocated space for all the mutable components.
+type Clonable[E any] interface {
+	Clone() E
+}
+
+// CloneNoOp breaks the convention of the Clonable type by having Clone just return
+// the same value. This is to allow convenient use of the Echo iterator without
+// needing to implement `Clone`, Careful, Reference types will preserve transformations.
+type CloneNoOp[E any] struct {
+	Wrap E
+}
+
+func (c CloneNoOp[E]) Clone() E {
+	return c.Wrap
+}
+
+// Echo returns a clone of the same data repeatedly.
+type Echo[E any] struct {
+	Template Clonable[E]
+}
+
+func (e Echo[E]) Next() bool {
+	return true
+}
+
+func (e Echo[E]) Get() E {
+	return e.Template.Clone()
+}
+
+func (e Echo[E]) Err() error {
+	return nil
+}
+
+type Limit[E any] struct {
+	Iterator[E]
+	Max int
+
+	count int
+}
+
+func (l *Limit[E]) Next() bool {
+	if l.count >= l.Max {
+		return false
+	}
+	if !l.Iterator.Next() {
+		// setting count to Max so that future calls to Next will return false
+		// without needing to call Next on the underlying iterator.
+		l.count = l.Max
+		return false
+	}
+	l.count++
+	return true
+}
+
+// Reduce uses the provided function to update the result with each element from
+// the iterator. Returns the final result.
+func Reduce[ELEMENT any, RESULT any](iter Iterator[ELEMENT], reduce func(ELEMENT, RESULT) (RESULT, error), init RESULT) (result RESULT, err error) {
+	result = init
+	for iter.Next() {
+		result, err = reduce(iter.Get(), result)
+		if err != nil {
+			return result, err
+		}
+	}
+	return result, iter.Err()
 }
