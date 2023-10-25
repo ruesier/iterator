@@ -14,25 +14,35 @@ func (e Empty[E]) Get() E {
 }
 func (e Empty[E]) Err() error { return nil }
 
-type Item[E any] struct {
+type item[E any] struct {
 	Data E
 	Err  error
 }
 
 type Channel[E any] interface {
-	Send(Item[E]) bool
+	Send(E) bool
+	SendErr(error) bool
 }
 
 type channelIter[E any] struct {
 	ctx    context.Context
 	cancel context.CancelFunc
-	c      chan Item[E]
-	item   Item[E]
+	c      chan item[E]
+	item   item[E]
 }
 
-func (ci *channelIter[E]) Send(r Item[E]) bool {
+func (ci *channelIter[E]) Send(e E) bool {
 	select {
-	case ci.c <- r:
+	case ci.c <- item[E]{Data: e}:
+		return false
+	case <-ci.ctx.Done():
+		return true
+	}
+}
+
+func (ci *channelIter[E]) SendErr(e error) bool {
+	select {
+	case ci.c <- item[E]{Err: e}:
 		return false
 	case <-ci.ctx.Done():
 		return true
@@ -75,7 +85,7 @@ func NewChannelIterator[E any](_ctx context.Context, generators ...func(Channel[
 	ci := &channelIter[E]{
 		ctx:    ctx,
 		cancel: cancel,
-		c:      make(chan Item[E]),
+		c:      make(chan item[E]),
 	}
 	if len(generators) == 1 {
 		go func() {
