@@ -30,7 +30,7 @@ func main() {
 	f = &fib{0, 1}
 	g := &fib{1, 0}
 	ratios, _ := iterator.GetN[float64](iterator.Combine[int, float64]{
-		Iters: []iterator.Iterator[int]{f, g},
+		Iterators: []iterator.Iterator[int]{f, g},
 		Join: func(vals ...int) float64 {
 			return float64(vals[1]) / float64(vals[0])
 		},
