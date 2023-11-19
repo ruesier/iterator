@@ -12,8 +12,8 @@ func TestChain(t *testing.T) {
 		Iterator: Map[int, string]{
 			Iterator: Filter[int]{
 				Iterator: &Generator[int]{
-					Generate: func(i int) (bool, int, error) {
-						return true, i + 1, nil
+					Generate: func(i int) (int, error) {
+						return i + 1, nil
 					},
 				},
 				Test: func(i int) bool {

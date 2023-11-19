@@ -85,17 +85,14 @@ func (s *Slice[E]) Err() error {
 
 // ToSlice reads all the values from an iterator and returns them all. If Iterator
 // returns an infinite number of values use GetN instead.
-func ToSlice[E any](iter Iterator[E]) (result []E, err error) {
-	for iter.Next() {
-		result = append(result, iter.Get())
-	}
-	return result, iter.Err()
+func ToSlice[E any](iter Iterator[E]) ([]E, error) {
+	return GetN(iter, -1)
 }
 
 // GetN returns the next N elements of the iterator. Result may have less than n
-// elements if iter finishes before returning n elements.
+// elements if iter finishes before returning n elements. If n is less than 0, it is treated as infinity. Warning, this will cause an infinite loop with unending iterator.
 func GetN[E any](iter Iterator[E], n int) (result []E, err error) {
-	for i := 0; i < n && iter.Next(); i++ {
+	for i := 0; (n < 0 || i < n) && iter.Next(); i++ {
 		result = append(result, iter.Get())
 	}
 	return result, iter.Err()
@@ -132,13 +129,21 @@ func (c Combine[BEFORE, AFTER]) Err() error {
 	return nil
 }
 
+type Error string
+
+func (e Error) Error() string {
+	return string(e)
+}
+
+const Stop Error = "Stop Iteration"
+
 // Generate is the function used by Generator to create the next value. The parameter
 // is the previous value returned by the iterator.
 // The returns should have the following valid structures
-// - return true, some_value, nil. continue iterating, some_value will be the next Get Value
-// - return false, zero, nil. Iteration complete
-// - return false, zero, some_error. An error occurred during Generate, Iteration Error.
-type Generate[E any] func(E) (bool, E, error)
+// - return some_value, nil. Continue iterating, some_value will be the next Get Value
+// - return zero_of_E, some_error. An error occurred during Generate, Iteration Error.
+// - return zero_of_E, Stop. Iteration is finished.
+type Generate[E any] func(E) (E, error)
 
 type Generator[E any] struct {
 	Generate Generate[E]
@@ -151,12 +156,8 @@ func (g *Generator[E]) Next() bool {
 	if g.err != nil {
 		return false
 	}
-	var cont bool
-	cont, g.val, g.err = g.Generate(g.val)
-	if g.err != nil {
-		return false
-	}
-	return cont
+	g.val, g.err = g.Generate(g.val)
+	return g.err != nil
 }
 
 func (g *Generator[E]) Get() E {
@@ -164,6 +165,9 @@ func (g *Generator[E]) Get() E {
 }
 
 func (g *Generator[E]) Err() error {
+	if g.err == Stop {
+		return nil
+	}
 	return g.err
 }
 
@@ -175,7 +179,7 @@ type Clonable[E any] interface {
 
 // CloneNoOp breaks the convention of the Clonable type by having Clone just return
 // the same value. This is to allow convenient use of the Echo iterator without
-// needing to implement `Clone`, Careful, Reference types will preserve transformations.
+// needing to implement `Clone`. Warning: Reference types will preserve transformations.
 type CloneNoOp[E any] struct {
 	Wrap E
 }
@@ -224,9 +228,10 @@ func (l *Limit[E]) Next() bool {
 
 // Reduce uses the provided function to update the result with each element from
 // the iterator. Returns the final result.
-func Reduce[ELEMENT any, RESULT any](iter Iterator[ELEMENT], reduce func(ELEMENT, RESULT) (RESULT, error), init RESULT) (result RESULT, err error) {
-	result = init
+func Reduce[ELEMENT any, RESULT any](iter Iterator[ELEMENT], reduce func(ELEMENT, RESULT) (RESULT, error), init RESULT) (RESULT, error) {
+	result := init
 	for iter.Next() {
+		var err error
 		result, err = reduce(iter.Get(), result)
 		if err != nil {
 			return result, err

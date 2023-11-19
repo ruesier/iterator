@@ -108,3 +108,22 @@ func NewChannelIterator[E any](_ctx context.Context, generators ...func(Channel[
 	}()
 	return ci
 }
+
+type Result[E any] struct {
+	Value E
+	Err   error
+}
+
+func SendToChannel[E any](iter Iterator[E], c chan Result[E]) {
+	for iter.Next() {
+		c <- Result[E]{
+			Value: iter.Get(),
+		}
+	}
+	if err := iter.Err(); err != nil {
+		c <- Result[E]{
+			Err: err,
+		}
+	}
+	close(c)
+}
