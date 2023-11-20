@@ -17,7 +17,7 @@ This package includes tools for converting between slices and iterators when nec
 
 The `Slice` type is a wrapper of a slice that implements `Iterator`.
 
-The `ToSlice` and `GetN` functions return slice representations of an `Iterator`. `GetN` allows
+The `ToSlice` function returns slice representation of an `Iterator`.
 
 Example:
 ```golang
@@ -42,3 +42,13 @@ func main() {
     }
 }
 ```
+
+### Transformations
+
+The `Filter`, `Map`, and `Limit` types wrap iterators to produce new iterators.
+
+- `Filter` only returns values that pass a provided test function
+- `Map` applies an update function to each element
+- `Limit` only returns a maximum number of elements
+
+## Async Iteration

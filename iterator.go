@@ -84,15 +84,10 @@ func (s *Slice[E]) Err() error {
 }
 
 // ToSlice reads all the values from an iterator and returns them all. If Iterator
-// returns an infinite number of values use GetN instead.
-func ToSlice[E any](iter Iterator[E]) ([]E, error) {
-	return GetN(iter, -1)
-}
-
-// GetN returns the next N elements of the iterator. Result may have less than n
-// elements if iter finishes before returning n elements. If n is less than 0, it is treated as infinity. Warning, this will cause an infinite loop with unending iterator.
-func GetN[E any](iter Iterator[E], n int) (result []E, err error) {
-	for i := 0; (n < 0 || i < n) && iter.Next(); i++ {
+// returns an infinite number of values this will result in an infinite loop.
+// Use an `iterator.Limit` to prevent infinite loops.
+func ToSlice[E any](iter Iterator[E]) (result []E, err error) {
+	for iter.Next() {
 		result = append(result, iter.Get())
 	}
 	return result, iter.Err()

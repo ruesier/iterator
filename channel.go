@@ -127,3 +127,82 @@ func SendToChannel[E any](iter Iterator[E], c chan Result[E]) {
 	}
 	close(c)
 }
+
+type receiveIter[E any] struct {
+	c       chan Result[E]
+	current Result[E]
+}
+
+func (ri *receiveIter[E]) Next() bool {
+	if ri.current.Err != nil {
+		return false
+	}
+	for result := range ri.c {
+		ri.current = result
+		return ri.current.Err == nil
+	}
+	return false
+}
+
+func (ri *receiveIter[E]) Get() E {
+	return ri.current.Value
+}
+
+func (ri *receiveIter[E]) Err() error {
+	return ri.current.Err
+}
+
+// MapAsync applies the update function inside a separate go routines.
+func MapAsync[BEFORE any, AFTER any](iter Iterator[BEFORE], update func(BEFORE) (AFTER, error), n int) Iterator[AFTER] {
+	in := make(chan BEFORE)
+	out := make(chan Result[AFTER])
+	quit := make(chan struct{})
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+	READ:
+		for iter.Next() {
+			select {
+			case in <- iter.Get():
+			case <-quit:
+				break READ
+			}
+		}
+		if err := iter.Err(); err != nil {
+			select {
+			case out <- Result[AFTER]{Err: err}:
+				close(quit)
+			case <-quit:
+			}
+		}
+		close(in)
+	}()
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			for element := range in {
+				updated, err := update(element)
+				select {
+				case out <- Result[AFTER]{
+					Value: updated,
+					Err:   err,
+				}:
+					if err != nil {
+						close(quit)
+					}
+				case <-quit:
+					return
+				}
+			}
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+	return &receiveIter[AFTER]{
+		c: out,
+	}
+}
