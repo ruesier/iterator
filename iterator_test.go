@@ -8,26 +8,29 @@ import (
 )
 
 func TestChain(t *testing.T) {
-	iter := &Limit[string]{
-		Iterator: Map[int, string]{
-			Iterator: Filter[int]{
-				Iterator: &Generator[int]{
-					Generate: func(i int) (int, error) {
-						return i + 1, nil
-					},
-				},
-				Test: func(i int) bool {
-					return i%2 == 0
-				},
-			},
-			Update: func(i int) string {
-				return strconv.Itoa(i)
-			},
+	gen := &Generator[int]{
+		Generate: func(i int) (int, error) {
+			return i + 1, nil
 		},
-		Max: 5,
+	}
+	filter := Filter[int]{
+		Iterator: gen,
+		Test: func(i int) bool {
+			return i%2 == 0
+		},
+	}
+	mapped := Map[int, string]{
+		Iterator: filter,
+		Update: func(i int) string {
+			return strconv.Itoa(i)
+		},
+	}
+	limited := &Limit[string]{
+		Iterator: mapped,
+		Max:      5,
 	}
 	want := []string{"2", "4", "6", "8", "10"}
-	got, err := ToSlice(iter)
+	got, err := ToSlice(limited)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +42,7 @@ func TestChain(t *testing.T) {
 func TestCombine(t *testing.T) {
 	iter := Combine[int, int]{
 		Iterators: []Iterator[int]{
-			&Slice[int]{Data: []int{1, 2, 3, 4, 5}},
+			&Slice[int]{Slice: []int{1, 2, 3, 4, 5}},
 			Echo[int]{CloneNoOp[int]{2}},
 		},
 		Join: func(values ...int) int {
